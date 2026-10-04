@@ -43,4 +43,22 @@ class MealprepTests(unittest.TestCase):
             path.write_text(json.dumps({"version": 1, "ingredients": [], "recipes": [], "plans": [{"date":"2025-01-01", "meal":"晚餐", "recipe":"缺失", "servings":1}]}), encoding="utf-8")
             self.assertEqual(self.run_cli(Path(d), "validate"), 1)
 
+    def test_validate_rejects_malformed_numbers_and_dates(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "db.json"
+            path.write_text(json.dumps({
+                "version": 1,
+                "ingredients": [{"name": "盐", "unit": "克", "quantity": float("nan")}],
+                "recipes": [{"name": "汤", "servings": 0, "ingredients": [{"name": "盐", "quantity": -1, "unit": "克"}]}],
+                "plans": [{"date": "20250101", "meal": "未知", "recipe": "汤", "servings": 0}],
+            }, allow_nan=True), encoding="utf-8")
+            self.assertEqual(self.run_cli(Path(d), "validate"), 1)
+            self.assertEqual(self.run_cli(Path(d), "shopping-list", "2025-01-01", "2025-01-02"), 2)
+
+    def test_validate_handles_non_object_records(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "db.json"
+            path.write_text(json.dumps({"ingredients": [], "recipes": ["bad"], "plans": [None]}), encoding="utf-8")
+            self.assertEqual(self.run_cli(Path(d), "validate"), 1)
+
 if __name__ == "__main__": unittest.main()

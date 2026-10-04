@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA = {"version": 1, "ingredients": [], "recipes": [], "plans": []}
+MEALS = ("早餐", "午餐", "晚餐", "加餐")
 
 
 def data_path(value: str | None) -> Path:
@@ -66,7 +67,11 @@ def valid_day(value: str) -> str:
 
 
 def find_recipe(db: dict, name: str) -> dict | None:
-    return next((r for r in db["recipes"] if r.get("name") == name), None)
+    return next((r for r in db["recipes"] if isinstance(r, dict) and r.get("name") == name), None)
+
+
+def is_positive_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
 
 
 def cmd_add_ingredient(db: dict, args: argparse.Namespace) -> str:
@@ -110,18 +115,36 @@ def cmd_plan(db: dict, args: argparse.Namespace) -> str:
 def validate(db: dict) -> list[str]:
     errors = []
     seen = set()
+    for item in db["ingredients"]:
+        if not isinstance(item, dict) or not item.get("name") or not item.get("unit") or not is_positive_number(item.get("quantity")):
+            errors.append("存在无效库存食材")
     for r in db["recipes"]:
-        if not r.get("name"): errors.append("存在无名称食谱")
-        for x in r.get("ingredients", []):
-            if not x.get("name") or not x.get("unit") or not isinstance(x.get("quantity"), (int, float)) or x["quantity"] <= 0:
+        if not isinstance(r, dict) or not r.get("name"):
+            errors.append("存在无名称食谱")
+            continue
+        if not is_positive_number(r.get("servings")):
+            errors.append(f"食谱 {r.get('name')} 的份数无效")
+        if not isinstance(r.get("ingredients"), list) or not r["ingredients"]:
+            errors.append(f"食谱 {r.get('name')} 没有食材")
+            continue
+        for x in r["ingredients"]:
+            if not isinstance(x, dict) or not x.get("name") or not x.get("unit") or not is_positive_number(x.get("quantity")):
                 errors.append(f"食谱 {r.get('name', '?')} 含无效食材")
     for p in db["plans"]:
+        if not isinstance(p, dict):
+            errors.append("存在无效计划")
+            continue
         key = (p.get("date"), p.get("meal"))
         if key in seen: errors.append(f"同一日期餐次重复：{p.get('date')} {p.get('meal')}")
         seen.add(key)
         if not find_recipe(db, p.get("recipe", "")): errors.append(f"计划引用不存在的食谱：{p.get('recipe')}")
-        try: date.fromisoformat(p.get("date", ""))
-        except ValueError: errors.append(f"计划日期无效：{p.get('date')}")
+        raw_date = p.get("date", "")
+        try:
+            if date.fromisoformat(raw_date).isoformat() != raw_date: raise ValueError
+        except (TypeError, ValueError):
+            errors.append(f"计划日期无效：{p.get('date')}")
+        if p.get("meal") not in MEALS: errors.append(f"计划餐次无效：{p.get('meal')}")
+        if not is_positive_number(p.get("servings")): errors.append(f"计划份数无效：{p.get('servings')}")
     return errors
 
 
@@ -152,7 +175,7 @@ def parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
     a = sub.add_parser("add-ingredient", help="录入库存食材"); a.add_argument("name"); a.add_argument("quantity", type=positive); a.add_argument("unit"); a.set_defaults(fn=cmd_add_ingredient)
     r = sub.add_parser("add-recipe", help="创建食谱"); r.add_argument("name"); r.add_argument("--servings", type=positive, default=1); r.add_argument("--ingredient", action="append", required=True, help="名称:数量:单位"); r.set_defaults(fn=cmd_add_recipe)
-    pl = sub.add_parser("plan", help="安排日期和餐次"); pl.add_argument("date", type=valid_day); pl.add_argument("meal", choices=["早餐", "午餐", "晚餐", "加餐"]); pl.add_argument("recipe"); pl.add_argument("--servings", type=positive, default=1); pl.set_defaults(fn=cmd_plan)
+    pl = sub.add_parser("plan", help="安排日期和餐次"); pl.add_argument("date", type=valid_day); pl.add_argument("meal", choices=MEALS); pl.add_argument("recipe"); pl.add_argument("--servings", type=positive, default=1); pl.set_defaults(fn=cmd_plan)
     s = sub.add_parser("shopping-list", help="汇总日期区间购物清单"); s.add_argument("start", type=valid_day); s.add_argument("end", type=valid_day); s.set_defaults(fn=cmd_shopping)
     v = sub.add_parser("validate", help="校验所有计划引用和结构"); v.set_defaults(fn=lambda db, args: "校验通过" if not validate(db) else "校验失败：\n- " + "\n- ".join(validate(db)))
     return p
