@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "ingredients": [],
+  "recipes": [
+    {"name": "番茄意面", "servings": 2, "ingredients": [{"name": "意面", "quantity": 200, "unit": "克"}, {"name": "番茄", "quantity": 2, "unit": "个"}]}
+  ],
+  "plans": [
+    {"date": "2025-01-06", "meal": "晚餐", "recipe": "番茄意面", "servings": 2}
+  ]
+}
